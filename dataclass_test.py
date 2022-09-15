@@ -14,7 +14,7 @@ class Database:
 class User:
 	username: str
 	password: str
-	salt: bytes = secrets.token_urlsafe(16)[0:16].encode()
+	salt: bytes = secrets.token_urlsafe(12).encode()
 	uuid: str = str(uuid.uuid4())
 
 	def __post_init__(self):

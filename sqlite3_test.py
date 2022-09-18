@@ -1,9 +1,7 @@
 #following tutorial from https://www.youtube.com/watch?v=pd-0G0MigUA
 
 import sqlite3 as sql
-
 conn = sql.connect(':memory:')
-
 c=conn.cursor()
 
 c.execute("""CREATE TABLE employees (
@@ -13,5 +11,4 @@ c.execute("""CREATE TABLE employees (
             )""")
  
 conn.commit()
-
 conn.close()

@@ -159,7 +159,8 @@ sg.theme('DarkAmber')
 
 login_layout = [
 	[sg.Text('Input your nickname'), sg.In(size=(30, 5), key='-NICK-')],
-	[sg.Text('Input room code'), sg.In(size=(30, 5), key='-ROOM-')],
+	[sg.Text('Input room code'), sg.Combo(raw('forumlist')['content'].split('\n'), key='-ROOM-', readonly=True)],
+	#[sg.Text('Input room code'), sg.In(size=(30, 5), key='-ROOM-')],
 	[sg.Button('Join', key='-JOIN-')],
 ]
 

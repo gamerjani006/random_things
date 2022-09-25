@@ -111,7 +111,7 @@ class User:  # TODO add proof of work
 	def post(self, message, edit_code):
 		self.update(self.current_room)
 		
-		format_message = {"username": self.username, "pubkey": self.vk.to_string().hex(), "message": base64.b64encode(crypt(message.encode(), edit_code.encode())).decode(), "signature": self.sk.sign(message.encode()).hex()}
+		format_message = {"username": self.username, "pubkey": self.vk.to_string().hex(), "message": encrypt(message.encode(), edit_code.encode()), "signature": self.sk.sign(message.encode()).hex()}
 		self.chat.append(format_message)
 		
 		new_content = f"{self.infoline}\r\n{json.dumps(self.chat)}"
@@ -119,26 +119,34 @@ class User:  # TODO add proof of work
 		x = edit(self.current_room, edit_code, new_content)
 		return x
 
-def kdf(key: bytes, digest_length: int) -> bytes:
-	final = b''
-	current_byte = b''
-	for i in range(digest_length):
-		current_byte = hashlib.sha3_512(current_byte + key + str(i).encode() + str(digest_length).encode()).hexdigest()[i%64].encode()
-		final += current_byte
+def kdf(key: bytes) -> bytes:
+	final = argon2.using(rounds=4, salt=b'00000000').hash(key).split('$')[-1][0:16]
 	return final
 
 
-def crypt(data: bytes, key: bytes) -> bytes:
-	key = kdf(key, len(data))
-	finished = bytes([i ^ key[c] for c,i in enumerate(data)])
-	return finished
+def encrypt(data: bytes, key: bytes) -> bytes:
+	key = kdf(key).encode()
+	cipher = AES.new(key, AES.MODE_EAX)
+	nonce = cipher.nonce
+	ciphertext, tag = cipher.encrypt_and_digest(data)
+	return f"{base64.b64encode(ciphertext).decode()}|{base64.b64encode(nonce).decode()}"
+
+def decrypt(encdata: str, key: bytes) -> bytes:
+	encdata = encdata.split('|')
+	ciphertext = base64.b64decode(encdata[0])
+	nonce = base64.b64decode(encdata[1])
+	key = kdf(key).encode()
+	
+	cipher = AES.new(key, AES.MODE_EAX, nonce=nonce)
+	plaintext = cipher.decrypt(ciphertext)
+	return plaintext
 
 
 def parse_msg(message: dict):
 	encryption_key = user.current_key
 	pubkey = VerifyingKey.from_string(bytes(bytearray.fromhex(message.get("pubkey"))))
 	signature = bytes(bytearray.fromhex(message.get("signature")))
-	msg = crypt(base64.b64decode(message.get("message")), encryption_key.encode()).decode()
+	msg = decrypt(message.get("message"), encryption_key.encode()).decode()
 	try:
 		verified = pubkey.verify(signature, msg.encode())
 		return f'[{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'

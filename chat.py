@@ -108,16 +108,36 @@ class User:  # TODO add proof of work
 
 		self.current_room = room_link
 
+	def validate_chain(self):
+		pass #TODO add chain validation
+
 	def post(self, message, edit_code):
-		self.update(self.current_room)
+		self.get_info(self.current_room)
+		previous_post_hash = hashlib.sha256(json.dumps(self.chat[-1]).encode()).hexdigest()
 		
-		format_message = {"username": self.username, "pubkey": self.vk.to_string().hex(), "message": encrypt(message.encode(), edit_code.encode()), "signature": self.sk.sign(message.encode()).hex()}
+		format_message = {"username": self.username, "prevHash": previous_post_hash, "nonce": None, "pubkey": self.vk.to_string().hex(), "message": encrypt(message.encode(), edit_code.encode()), "signature": self.sk.sign(message.encode()).hex()}
+		proof = mine(format_message, 18)
+		print(proof)
 		self.chat.append(format_message)
 		
 		new_content = f"{self.infoline}\r\n{json.dumps(self.chat)}"
 		
 		x = edit(self.current_room, edit_code, new_content)
 		return x
+
+def hex_to_bin(digest):
+	temp = bin(int('1'+digest, 16))[3:]
+	return temp
+
+def mine(data: dict, difficulty):
+	nonce=0
+	while True:
+		data['nonce']=nonce
+		hashed = hashlib.sha256(json.dumps(data).encode()).hexdigest()
+		to_binary = hex_to_bin(hashed)
+		if to_binary.startswith('0'*difficulty):
+			return nonce
+		nonce += 1
 
 def kdf(key: bytes) -> bytes:
 	final = argon2.using(rounds=4, salt=b'00000000').hash(key).split('$')[-1][0:16]
@@ -149,7 +169,11 @@ def parse_msg(message: dict):
 	msg = decrypt(message.get("message"), encryption_key.encode()).decode()
 	try:
 		verified = pubkey.verify(signature, msg.encode())
-		return f'[{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'
+		proven = hex_to_bin(hashlib.sha256(json.dumps(message).encode()).hexdigest()).startswith('0'*18)
+		if proven:
+			return f'[{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'
+		else:
+			return f'<INVALID PROOF>'
 	except ecdsa.keys.BadSignatureError:
 		return f'<UNVERIFIED MESSAGE>'
 

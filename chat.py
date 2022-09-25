@@ -64,12 +64,13 @@ def edit(url, edit_code, text):
 
 
 # Actually starting code lmfao
-# from dataclasses import dataclass, asdict
-import ecdsa
 from ecdsa import SigningKey, VerifyingKey
+from passlib.hash import argon2
+from Crypto.Cipher import AES
 import PySimpleGUI as sg
 import hashlib
-# import library
+import base64
+import ecdsa
 import json
 import time
 
@@ -79,8 +80,16 @@ class User:  # TODO add proof of work
 		self.current_room = None
 		self.current_key = None
 		self.username = name
-		self.sk = SigningKey.generate()
-		self.vk = self.sk.verifying_key
+		with open('.keypair', 'rb') as file:
+			pemkey = file.read()
+		if len(pemkey) == 0:
+			self.sk = SigningKey.generate()
+			self.vk = self.sk.verifying_key
+			with open('.keypair', 'wb') as file:
+				file.write(self.sk.to_pem())
+		else:
+			self.sk = SigningKey.from_pem(pemkey)
+			self.vk = self.sk.verifying_key
 
 	def update(self, room_link):
 		full = raw(room_link)
@@ -102,7 +111,7 @@ class User:  # TODO add proof of work
 	def post(self, message, edit_code):
 		self.update(self.current_room)
 		
-		format_message = {"username": self.username, "pubkey": self.vk.to_string().hex(), "message": message, "signature": self.sk.sign(message.encode()).hex()}
+		format_message = {"username": self.username, "pubkey": self.vk.to_string().hex(), "message": base64.b64encode(crypt(message.encode(), edit_code.encode())).decode(), "signature": self.sk.sign(message.encode()).hex()}
 		self.chat.append(format_message)
 		
 		new_content = f"{self.infoline}\r\n{json.dumps(self.chat)}"
@@ -116,7 +125,6 @@ def kdf(key: bytes, digest_length: int) -> bytes:
 	for i in range(digest_length):
 		current_byte = hashlib.sha3_512(current_byte + key + str(i).encode() + str(digest_length).encode()).hexdigest()[i%64].encode()
 		final += current_byte
-		
 	return final
 
 
@@ -127,15 +135,15 @@ def crypt(data: bytes, key: bytes) -> bytes:
 
 
 def parse_msg(message: dict):
+	encryption_key = user.current_key
 	pubkey = VerifyingKey.from_string(bytes(bytearray.fromhex(message.get("pubkey"))))
 	signature = bytes(bytearray.fromhex(message.get("signature")))
-	msg = message.get("message")
+	msg = crypt(base64.b64decode(message.get("message")), encryption_key.encode()).decode()
 	try:
 		verified = pubkey.verify(signature, msg.encode())
-		return f'{message.get("username")}: {msg}'
+		return f'[{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'
 	except ecdsa.keys.BadSignatureError:
-		print(f"Message {message}\nIs not verifiable!")
-		return None
+		return f'<UNVERIFIED MESSAGE>'
 
 
 
@@ -167,12 +175,13 @@ while True:
 
 	if not login:
 		user.update(user.current_room)
-		#current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
-		#window['-CHATBOX-'].Update(current)
+		current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
+		window['-CHATBOX-'].Update(current)
 
 	if event == '-MSEND-':
 		if len(values['-MINP-']) != 0:
 			_message = values['-MINP-']
+			user.update(user.current_room)
 			x = user.post(_message, user.current_key)
 			if x.get('status') == '200':
 				current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
@@ -189,12 +198,11 @@ while True:
 			user = User(values['-NICK-'])
 			user.get_info(values['-ROOM-'])
 			if user.infoline.startswith('chatroom'):
-				guess = None
-				key_hash = user.infoline_parsed[2]
-				salt = user.infoline_parsed[1]
-				while guess != key_hash:
+				guess = False
+				key_hash = user.infoline_parsed[1]
+				while not guess:
 					_inp = sg.popup_get_text('Enter Edit Code')
-					guess = hashlib.blake2s(_inp.encode(), salt=salt.encode()).hexdigest()
+					guess = argon2.verify(_inp, key_hash)
 				login = False
 				user.current_key = _inp
 				window.close()

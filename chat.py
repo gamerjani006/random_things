@@ -66,7 +66,7 @@ def edit(url, edit_code, text):
 # Actually starting code lmfao
 from ecdsa import SigningKey, VerifyingKey
 from passlib.hash import argon2
-from Crypto.Cipher import AES
+from Cryptodome.Cipher import AES
 import PySimpleGUI as sg
 import hashlib
 import base64

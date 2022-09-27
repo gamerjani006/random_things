@@ -66,7 +66,7 @@ def edit(url, edit_code, text):
 # Actually starting code lmfao
 from ecdsa import SigningKey, VerifyingKey
 from passlib.hash import argon2
-from Cryptodome.Cipher import AES
+from Crypto.Cipher import AES
 import PySimpleGUI as sg
 import hashlib
 import base64
@@ -111,12 +111,12 @@ class User:  # TODO add proof of work
 	def validate_chain(self):
 		pass #TODO add chain validation
 
-	def post(self, message, edit_code):
+	def post(self, message, edit_code, difficulty):
 		self.get_info(self.current_room)
 		previous_post_hash = hashlib.sha256(json.dumps(self.chat[-1]).encode()).hexdigest()
 		
 		format_message = {"username": self.username, "prevHash": previous_post_hash, "nonce": None, "pubkey": self.vk.to_string().hex(), "message": encrypt(message.encode(), edit_code.encode()), "signature": self.sk.sign(message.encode()).hex()}
-		proof = mine(format_message, 18)
+		proof = mine(format_message, difficulty)
 		print(proof)
 		self.chat.append(format_message)
 		
@@ -169,13 +169,15 @@ def parse_msg(message: dict):
 	msg = decrypt(message.get("message"), encryption_key.encode()).decode()
 	try:
 		verified = pubkey.verify(signature, msg.encode())
-		proven = hex_to_bin(hashlib.sha256(json.dumps(message).encode()).hexdigest()).startswith('0'*18)
-		if proven:
+		check_proof = hex_to_bin(hashlib.sha256(json.dumps(message).encode()).hexdigest())
+		if check_proof.startswith('0'*20):
 			return f'[{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'
-		else:
-			return f'<INVALID PROOF>'
+		elif check_proof.startswith('0'*12):
+			return f'[!!!][{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'
+		else: 
+			return f'[INVALID][{hashlib.sha3_512(pubkey.to_string()).hexdigest()[0:6]}]{message.get("username")}: {msg}'
 	except ecdsa.keys.BadSignatureError:
-		return f'<UNVERIFIED MESSAGE>'
+		return f'[UNSIGNED]{message.get("username")}: {msg}'
 
 
 
@@ -183,13 +185,17 @@ sg.theme('DarkAmber')
 
 login_layout = [
 	[sg.Text('Input your nickname'), sg.In(size=(30, 5), key='-NICK-')],
-	[sg.Text('Input room code'), sg.Combo(raw('forumlist')['content'].split('\n'), key='-ROOM-', readonly=True)],
+	[sg.Text('Input room code'), sg.Combo(raw('forumlist')['content'].split('\n'), key='-ROOM-', readonly=False)],
 	#[sg.Text('Input room code'), sg.In(size=(30, 5), key='-ROOM-')],
 	[sg.Button('Join', key='-JOIN-')],
 ]
 
 chat_layout = [
 	[sg.Multiline('', disabled=True, size=(50, 20), key='-CHATBOX-')],
+	[
+		sg.Text('PLACEHOLDER', key='-NICKNAME-'),
+		sg.Text('Validity:'),
+		sg.Combo(['Low', 'High'], readonly=True, default_value='High', key='-VALIDITY-')],
 	[
 		sg.Text('Message:'),
 		sg.In(key='-MINP-', size=(35), do_not_clear=False),
@@ -206,27 +212,35 @@ while True:
 	if event == sg.WIN_CLOSED:
 		break
 
-	if not login:
+	'''if not login:
 		user.update(user.current_room)
 		current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
-		window['-CHATBOX-'].Update(current)
+		window['-CHATBOX-'].Update(current)'''
 
 	if event == '-MSEND-':
-		if len(values['-MINP-']) != 0:
+		if values['-MINP-'] != '':
 			_message = values['-MINP-']
-			user.update(user.current_room)
-			x = user.post(_message, user.current_key)
-			if x.get('status') == '200':
+			if values['-VALIDITY-'] == 'Low':
+				difficulty=12
+			elif values['-VALIDITY-'] == 'High':
+				difficulty=20
+			else:
+				difficulty=12
+			x = user.post(_message, user.current_key, difficulty)
+			'''if x.get('status') == '200':
 				current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
 				window['-CHATBOX-'].Update(current)
 			else:
-				sg.popup_ok(x.get('content'))
+				sg.popup_ok(x.get('content'))'''
+		user.get_info(user.current_room)
+		current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
+		window['-CHATBOX-'].Update(current)
 
 	if event == '-JOIN-':
 		if (
 			len(values['-ROOM-']) > 1
 			and len(values['-NICK-']) < 10
-			and len(values['-NICK-']) > 2
+			and len(values['-NICK-']) > 3
 		):
 			user = User(values['-NICK-'])
 			user.get_info(values['-ROOM-'])
@@ -242,5 +256,6 @@ while True:
 				window = sg.Window('Chat', chat_layout, finalize=True)
 				current = '\n'.join([parse_msg(i) for i in user.chat if parse_msg(i) != None])
 				window['-CHATBOX-'].Update(current)
+				window['-NICKNAME-'].Update(f'Nickname: {user.username}')
 		else:
-			sg.Popup('Something went wrong!')
+			sg.Popup('Error! Invalid username/room code!')

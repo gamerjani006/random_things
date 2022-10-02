@@ -1,7 +1,7 @@
 import hashlib, secrets
 
-user_database = { #El lehet menteni json.dumps()-al egy adatbázis fájlba
-    "users": [] #[felhasználónév, jelszó, só]
+user_database = {
+    "users": []
 }
 
 def check_for_username(username) -> bool:

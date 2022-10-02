@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+'''
+Chat room that uses the site rentry.co
+It basically works like pastebin but you need an 'Edit Code' to be able to edit pastes
+The encryption key will be derived from the edit code
+'''
+
 import http.cookiejar, urllib.parse, urllib.request
 from http.cookies import SimpleCookie
 from json import loads as json_loads
